@@ -64,6 +64,16 @@ class SyncMergeTest {
     }
 
     @Test
+    fun historyMatchesCompanyByIdOrCode() {
+        val php = Company(id = "php", name = "Party Hire Productions", code = "PHP")
+        val byId = SentRecord("old-label", 1, "A", 1.0, "d", "x", companyId = "b-id")
+        val byCode = SentRecord("MEC", 2, "B", 1.0, "d", "x")
+        assertTrue(byId.isFor(mec))
+        assertTrue(byCode.isFor(mec))
+        assertTrue(!byCode.isFor(php))
+    }
+
+    @Test
     fun jsonRoundTripDropsGoogleAccount() {
         val d = data(
             listOf(mec.copy(updatedAt = 3)), mapOf("gone" to 4L),

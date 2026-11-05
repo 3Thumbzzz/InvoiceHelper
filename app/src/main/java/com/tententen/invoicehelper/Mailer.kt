@@ -54,7 +54,9 @@ class GoogleAuth(private val activity: ComponentActivity) {
     companion object {
         const val GMAIL_SEND = "https://www.googleapis.com/auth/gmail.send"
         const val DRIVE_APPDATA = "https://www.googleapis.com/auth/drive.appdata"
-        private val SCOPES = listOf(Scope(GMAIL_SEND), Scope("email"), Scope(DRIVE_APPDATA))
+        /** Only files/folders this app creates (the Invoices/<company>/ copies). */
+        const val DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"
+        private val SCOPES = listOf(Scope(GMAIL_SEND), Scope("email"), Scope(DRIVE_APPDATA), Scope(DRIVE_FILE))
     }
 
     private var pending: CompletableDeferred<AuthorizationResult>? = null
@@ -76,6 +78,10 @@ class GoogleAuth(private val activity: ComponentActivity) {
     var hasDriveScope = false
         private set
 
+    /** Whether the last token could create files in Drive (needed to save invoice copies). */
+    var hasDriveFileScope = false
+        private set
+
     /**
      * Returns a valid access token. If Google needs to show its account/permission screen, it does so
      * when [interactive], otherwise throws [ConsentNeededException].
@@ -95,6 +101,7 @@ class GoogleAuth(private val activity: ComponentActivity) {
         }
         if (result.grantedScopes.none { it.endsWith("gmail.send") }) throw MissingScopeException()
         hasDriveScope = result.grantedScopes.any { it.endsWith("drive.appdata") }
+        hasDriveFileScope = result.grantedScopes.any { it.endsWith("drive.file") }
         return result.accessToken ?: error("Google didn't return an access token")
     }
 }

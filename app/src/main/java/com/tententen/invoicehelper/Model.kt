@@ -105,13 +105,20 @@ data class SentRecord(
     val date: String,
     val to: String,
     val sentAt: Long = 0L,
+    /** Id of the company it was sent for (blank on records from older versions). */
+    val companyId: String = "",
 ) {
     /** Identifies the same sent invoice across devices. */
     val key: String get() = "$company|$invoiceNo|$client|$date"
 
+    /** True if this record belongs to [c] (by id, or by short code/name for older records). */
+    fun isFor(c: Company): Boolean =
+        (companyId.isNotBlank() && companyId == c.id) || company.equals(c.code.ifBlank { c.name }, ignoreCase = true)
+
     fun toJson(): JSONObject = JSONObject()
         .put("company", company).put("invoiceNo", invoiceNo).put("client", client)
         .put("total", total).put("date", date).put("to", to).put("sentAt", sentAt)
+        .put("companyId", companyId)
 
     companion object {
         fun fromJson(o: JSONObject) = SentRecord(
@@ -122,6 +129,7 @@ data class SentRecord(
             date = o.optString("date"),
             to = o.optString("to"),
             sentAt = o.optLong("sentAt", 0L),
+            companyId = o.optString("companyId"),
         )
     }
 }
@@ -422,6 +430,7 @@ class AppState(private val store: Store) {
             date = d.date.format(LONG_DATE),
             to = d.company.email,
             sentAt = System.currentTimeMillis(),
+            companyId = d.company.id,
         )
         history = (listOf(rec) + history).take(MAX_HISTORY)
         store.saveHistory(history)

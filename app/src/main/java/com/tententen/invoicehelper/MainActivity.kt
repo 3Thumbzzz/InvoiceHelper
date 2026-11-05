@@ -64,6 +64,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -145,12 +146,31 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
             }
         },
     ) { inner ->
-        Box(
-            Modifier
+        val scope = rememberCoroutineScope()
+        var refreshing by remember { mutableStateOf(false) }
+        // Pull down from the top of any tab to sync with your other devices.
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    if (state.profile.googleAccount.isBlank()) {
+                        snackbar.showSnackbar("Sign in with Google on the Me tab to sync.")
+                        return@launch
+                    }
+                    refreshing = true
+                    val err = sync.sync(interactive = true)
+                    refreshing = false
+                    snackbar.showSnackbar(
+                        err?.let { "Sync failed: $it" } ?: "Synced",
+                        withDismissAction = err != null,
+                    )
+                }
+            },
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(inner)
                 .consumeWindowInsets(inner)
-                .imePadding()
+                .imePadding(),
         ) {
             when (tab) {
                 0 -> InvoiceScreen(state, auth, sync, snackbar)
@@ -222,11 +242,11 @@ fun InvoiceScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar
                         d.subject(), d.profile.emailBody, f,
                     )
                     GmailApi.send(token, msg)
-                    f
+                    f to token
                 }
             }
-            sending = false
-            result.onSuccess { f ->
+            result.onSuccess { (f, token) ->
+                // The email is out: record it before anything else can fail.
                 state.markSent(d)
                 client = ""; amount = ""; parking = ""; travel = ""
                 extras.clear()
@@ -236,12 +256,23 @@ fun InvoiceScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar
                         Exporter.saveToDownloads(ctx, f, d.company.code.ifBlank { "Other" })
                     }.isSuccess
                 }
+                // Keep a copy in Google Drive under Invoices/<company name>/.
+                val driveNote = if (!auth.hasDriveFileScope) {
+                    " Not saved to Drive: Drive permission wasn't allowed."
+                } else {
+                    withContext(Dispatchers.IO) {
+                        runCatching { DriveFiles.saveInvoice(token, d.company.name.ifBlank { d.company.code }, f) }
+                    }.fold({ " Saved to Drive." }, { " Not saved to Drive: ${Mailer.friendlyError(it)}" })
+                }
+                sending = false
                 snackbar.showSnackbar(
-                    "Invoice #${d.invoiceNo} sent to ${d.company.email}" +
-                        if (saved) "" else " (copy not saved to Downloads)",
+                    "Invoice #${d.invoiceNo} sent to ${d.company.email}." + driveNote +
+                        if (saved) "" else " (Copy not saved to Downloads.)",
                     withDismissAction = true,
+                    duration = SnackbarDuration.Long,
                 )
             }.onFailure {
+                sending = false
                 snackbar.showSnackbar(
                     "Not sent: ${Mailer.friendlyError(it)}",
                     withDismissAction = true,
@@ -424,10 +455,22 @@ fun InvoiceScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar
             if (sending) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
 
-        if (state.history.isNotEmpty()) {
+        // Only the selected company's invoices.
+        val recent = company?.let { c -> state.history.filter { it.isFor(c) } }.orEmpty()
+        if (company != null) {
             HorizontalDivider(Modifier.padding(top = 8.dp))
-            Text("Recently sent", style = MaterialTheme.typography.titleMedium)
-            state.history.take(10).forEach { r ->
+            Text(
+                "Recently sent to ${company.code.ifBlank { company.name }}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (recent.isEmpty()) {
+                Text(
+                    "No invoices sent to ${company.name} yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            recent.take(10).forEach { r ->
                 Column {
                     Text("${r.company} #${r.invoiceNo} · ${r.client}", style = MaterialTheme.typography.bodyMedium)
                     Text(

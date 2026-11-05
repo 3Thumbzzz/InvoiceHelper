@@ -144,6 +144,65 @@ object DriveSync {
 }
 
 /**
+ * Saves sent invoice PDFs to the visible Drive folder Invoices/<company name>/.
+ * Uses the drive.file scope, so it only sees folders/files this app created. Call off the main thread.
+ */
+object DriveFiles {
+    private const val ROOT_FOLDER = "Invoices"
+    private const val FOLDER_MIME = "application/vnd.google-apps.folder"
+
+    /** Uploads [pdf] and returns its Drive file id. */
+    fun saveInvoice(token: String, companyName: String, pdf: java.io.File): String {
+        val root = folder(token, ROOT_FOLDER, "root")
+        val sub = folder(token, cleanName(companyName).ifBlank { "Other" }, root)
+        return upload(token, pdf, sub)
+    }
+
+    private fun cleanName(s: String) = s.replace('/', '-').replace('\\', '-').trim()
+
+    private fun quote(s: String) = s.replace("\\", "\\\\").replace("'", "\\'")
+
+    /** Finds (or creates) the folder [name] inside [parent]. */
+    private fun folder(token: String, name: String, parent: String): String {
+        val q = URLEncoder.encode(
+            "mimeType = '$FOLDER_MIME' and name = '${quote(name)}' and '$parent' in parents and trashed = false",
+            "UTF-8",
+        )
+        val found = JSONObject(
+            Http.request(
+                "https://www.googleapis.com/drive/v3/files?q=$q&spaces=drive&orderBy=createdTime&fields=files(id)",
+                token, "GET", null, null, "Google Drive",
+            )
+        ).optJSONArray("files")
+        if (found != null && found.length() > 0) return found.getJSONObject(0).getString("id")
+        val meta = JSONObject().put("name", name).put("mimeType", FOLDER_MIME).put("parents", JSONArray().put(parent))
+        return JSONObject(
+            Http.request(
+                "https://www.googleapis.com/drive/v3/files?fields=id", token, "POST",
+                meta.toString().toByteArray(), "application/json; charset=UTF-8", "Google Drive",
+            )
+        ).getString("id")
+    }
+
+    private fun upload(token: String, pdf: java.io.File, parent: String): String {
+        val boundary = "invoicehelper-${System.nanoTime()}"
+        val meta = JSONObject().put("name", pdf.name).put("parents", JSONArray().put(parent))
+        val body = java.io.ByteArrayOutputStream().apply {
+            write("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n".toByteArray())
+            write("--$boundary\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
+            write(pdf.readBytes())
+            write("\r\n--$boundary--\r\n".toByteArray())
+        }.toByteArray()
+        return JSONObject(
+            Http.request(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+                token, "POST", body, "multipart/related; boundary=$boundary", "Google Drive",
+            )
+        ).getString("id")
+    }
+}
+
+/**
  * Coordinates syncing: on app start/resume, before each Send, after changes (debounced) and on demand.
  * Only interactive syncs (Send, "Sync now") may show Google's permission screen.
  */
