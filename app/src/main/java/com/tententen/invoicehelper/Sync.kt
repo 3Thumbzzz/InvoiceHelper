@@ -155,7 +155,30 @@ object DriveFiles {
     fun saveInvoice(token: String, companyName: String, pdf: java.io.File): String {
         val root = folder(token, ROOT_FOLDER, "root")
         val sub = folder(token, cleanName(companyName).ifBlank { "Other" }, root)
-        return upload(token, pdf, sub)
+        return JSONObject(upload(token, pdf.name, "application/pdf", pdf.readBytes(), sub, "id")).getString("id")
+    }
+
+    /**
+     * Saves a job file under "DJ Jobs/<folder>/" (reusing an earlier copy with the same name) and returns
+     * its id and link for attaching to the calendar event.
+     */
+    fun saveJobFile(token: String, folderName: String, fileName: String, mime: String, bytes: ByteArray): DriveFileInfo {
+        val root = folder(token, JOBS_CALENDAR, "root")
+        val sub = folder(token, cleanName(folderName).ifBlank { "Job" }, root)
+        val name = cleanName(fileName)
+        val q = URLEncoder.encode("name = '${quote(name)}' and '$sub' in parents and trashed = false", "UTF-8")
+        val found = JSONObject(
+            Http.request(
+                "https://www.googleapis.com/drive/v3/files?q=$q&spaces=drive&fields=files(id,webViewLink,mimeType)",
+                token, "GET", null, null, "Google Drive",
+            )
+        ).optJSONArray("files")
+        val o = if (found != null && found.length() > 0) {
+            found.getJSONObject(0)
+        } else {
+            JSONObject(upload(token, name, mime, bytes, sub, "id,webViewLink,mimeType"))
+        }
+        return DriveFileInfo(name, o.getString("id"), o.getString("webViewLink"), o.optString("mimeType", mime))
     }
 
     private fun cleanName(s: String) = s.replace('/', '-').replace('\\', '-').trim()
@@ -184,21 +207,20 @@ object DriveFiles {
         ).getString("id")
     }
 
-    private fun upload(token: String, pdf: java.io.File, parent: String): String {
+    /** Multipart upload; returns the response JSON (with the requested [fields]). */
+    private fun upload(token: String, name: String, mime: String, bytes: ByteArray, parent: String, fields: String): String {
         val boundary = "invoicehelper-${System.nanoTime()}"
-        val meta = JSONObject().put("name", pdf.name).put("parents", JSONArray().put(parent))
+        val meta = JSONObject().put("name", name).put("parents", JSONArray().put(parent))
         val body = java.io.ByteArrayOutputStream().apply {
             write("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n".toByteArray())
-            write("--$boundary\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
-            write(pdf.readBytes())
+            write("--$boundary\r\nContent-Type: $mime\r\n\r\n".toByteArray())
+            write(bytes)
             write("\r\n--$boundary--\r\n".toByteArray())
         }.toByteArray()
-        return JSONObject(
-            Http.request(
-                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
-                token, "POST", body, "multipart/related; boundary=$boundary", "Google Drive",
-            )
-        ).getString("id")
+        return Http.request(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=$fields",
+            token, "POST", body, "multipart/related; boundary=$boundary", "Google Drive",
+        )
     }
 }
 

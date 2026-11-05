@@ -66,6 +66,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -102,11 +103,15 @@ class MainActivity : ComponentActivity() {
         val state = AppState(Store(applicationContext))
         val auth = GoogleAuth(this)
         val sync = SyncManager(state, auth, lifecycleScope)
-        // Pull changes from other devices whenever the app comes to the foreground.
+        val jobs = JobSyncManager(applicationContext, state, auth)
+        // Pull changes from other devices and new MEC emails whenever the app comes to the foreground.
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) { sync.sync(interactive = false) }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                sync.sync(interactive = false)
+                jobs.sync(interactive = false)
+            }
         }
-        setContent { AppTheme { App(state, auth, sync) } }
+        setContent { AppTheme { App(state, auth, sync, jobs) } }
     }
 }
 
@@ -124,8 +129,9 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
+fun App(state: AppState, auth: GoogleAuth, sync: SyncManager, jobs: JobSyncManager) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var prefill by remember { mutableStateOf<InvoicePrefill?>(null) }
     val snackbar = remember { SnackbarHostState() }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -133,14 +139,18 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
             NavigationBar {
                 NavigationBarItem(
                     selected = tab == 0, onClick = { tab = 0 },
-                    icon = { Icon(Icons.Default.Email, null) }, label = { Text("Invoice") },
+                    icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Jobs") },
                 )
                 NavigationBarItem(
                     selected = tab == 1, onClick = { tab = 1 },
-                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("Companies") },
+                    icon = { Icon(Icons.Default.Email, null) }, label = { Text("Invoice") },
                 )
                 NavigationBarItem(
                     selected = tab == 2, onClick = { tab = 2 },
+                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("Companies") },
+                )
+                NavigationBarItem(
+                    selected = tab == 3, onClick = { tab = 3 },
                     icon = { Icon(Icons.Default.Person, null) }, label = { Text("Me") },
                 )
             }
@@ -148,7 +158,7 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
     ) { inner ->
         val scope = rememberCoroutineScope()
         var refreshing by remember { mutableStateOf(false) }
-        // Pull down from the top of any tab to sync with your other devices.
+        // Pull down from the top of any tab to sync with your other devices and check for new MEC emails.
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = {
@@ -159,10 +169,16 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
                     }
                     refreshing = true
                     val err = sync.sync(interactive = true)
+                    val jobErr = jobs.sync(interactive = true)
                     refreshing = false
+                    val upcoming = jobs.events.count { it.isJob && !it.cancelled && !it.onHold && !it.unconfirmed && !it.date.isBefore(LocalDate.now()) }
                     snackbar.showSnackbar(
-                        err?.let { "Sync failed: $it" } ?: "Synced",
-                        withDismissAction = err != null,
+                        when {
+                            err != null -> "Sync failed: $err"
+                            jobErr != null -> "Synced, but jobs didn't update: $jobErr"
+                            else -> "Synced · $upcoming upcoming job" + if (upcoming == 1) "" else "s"
+                        },
+                        withDismissAction = err != null || jobErr != null,
                     )
                 }
             },
@@ -173,8 +189,9 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
                 .imePadding(),
         ) {
             when (tab) {
-                0 -> InvoiceScreen(state, auth, sync, snackbar)
-                1 -> CompaniesScreen(state, snackbar)
+                0 -> JobsScreen(state, jobs, snackbar) { prefill = it; tab = 1 }
+                1 -> InvoiceScreen(state, auth, sync, snackbar, prefill) { prefill = null }
+                2 -> CompaniesScreen(state, snackbar)
                 else -> ProfileScreen(state, auth, sync, snackbar)
             }
         }
@@ -184,7 +201,14 @@ fun App(state: AppState, auth: GoogleAuth, sync: SyncManager) {
 // ---------------------------------------------------------------- Invoice
 
 @Composable
-fun InvoiceScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar: SnackbarHostState) {
+fun InvoiceScreen(
+    state: AppState,
+    auth: GoogleAuth,
+    sync: SyncManager,
+    snackbar: SnackbarHostState,
+    prefill: InvoicePrefill? = null,
+    onPrefillUsed: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val company = state.selectedCompany
@@ -200,6 +224,19 @@ fun InvoiceScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar
     var checking by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<InvoiceData?>(null) }
     val date = LocalDate.ofEpochDay(dateDay)
+
+    // "Create invoice for this job" on the Jobs tab.
+    LaunchedEffect(prefill) {
+        val p = prefill ?: return@LaunchedEffect
+        state.companies.firstOrNull { it.code.equals(p.companyCode, true) }?.let { state.select(it.id) }
+        client = p.client
+        amount = p.amount
+        parking = ""
+        travel = ""
+        extras.clear()
+        dateDay = LocalDate.now().toEpochDay()
+        onPrefillUsed()
+    }
 
     fun build(): InvoiceData? = state.selectedCompany?.let {
         InvoiceData(

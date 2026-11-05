@@ -20,7 +20,11 @@ Do this in a browser while signed in to the Google account you send invoices fro
    - App name `Invoice Helper`, support email = your Gmail
    - Audience: **External**
    - Contact email = your Gmail, tick the agreement, then **Create**
-4. **Data Access** → **Add or remove scopes** → tick `.../auth/gmail.send` and `.../auth/userinfo.email`
+   Also enable the **Google Drive API** and **Google Calendar API** the same way
+   (https://console.cloud.google.com/apis/library/drive.googleapis.com and
+   https://console.cloud.google.com/apis/library/calendar-json.googleapis.com).
+4. **Data Access** → **Add or remove scopes** → tick `.../auth/gmail.send`, `.../auth/userinfo.email`,
+   `.../auth/drive.appdata`, `.../auth/drive.file`, `.../auth/gmail.readonly` and `.../auth/calendar`
    → **Update** → **Save**.
 5. **Audience** → **Publish app** → **Confirm**.
    This stops Google asking you to sign in again every 7 days. It doesn't list the app anywhere public.
@@ -45,6 +49,22 @@ Wait a few minutes and try again.
 - The company's invoice number goes up by 1 only if the email sends
 - A copy is saved to `Download/Invoices/<CODE>/` on the phone and appears in Gmail's Sent folder
 - Parking/Travel lines appear on the invoice only when they're above $0
+
+## Jobs calendar
+The **Jobs** tab is a calendar of upcoming gigs, laid out and coloured like Google Calendar.
+Tap **Connect Gmail & Calendar** once, then pull down to refresh.
+- It reads booking emails from MEC (job sheets, confirmations, introductions, invoiced notices,
+  hold confirmations, cancellations) and the monthly Zoho bookings report PDF.
+- Confirmed gigs go into a **DJ Jobs** calendar in your Google Calendar. Each one has arrival, start
+  and end times, a Google Maps link, client and venue phone numbers, Spotify links, and the job sheet
+  files (saved to `DJ Jobs/` in your Drive and attached to the event).
+- On-hold dates from the report or hold emails appear as yellow all-day "ON HOLD" entries.
+- **+ MEC unconfirmed** adds a grey placeholder for a date you've been offered. It's replaced
+  automatically once MEC confirms a gig on that date.
+- Updates never remove a date by themselves. If a gig is cancelled or drops off MEC's emails,
+  it shows under **Needs your OK** and stays in the calendar until you approve the removal.
+- Tap a gig for its details, call buttons, directions, files, and **Create invoice**
+  (prefills the MEC invoice with the client and pay).
 
 ## Moving companies between devices
 On the **Companies** tab, **Export** saves all companies (details plus next invoice numbers) to a

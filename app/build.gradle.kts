@@ -14,8 +14,8 @@ android {
         applicationId = "com.tententen.invoicehelper"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     // App signing key (not in git). Google sign-in is registered against this key's SHA-1,
@@ -75,6 +75,7 @@ dependencies {
     implementation("com.sun.mail:android-activation:1.6.7")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

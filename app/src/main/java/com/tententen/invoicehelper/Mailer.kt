@@ -56,7 +56,13 @@ class GoogleAuth(private val activity: ComponentActivity) {
         const val DRIVE_APPDATA = "https://www.googleapis.com/auth/drive.appdata"
         /** Only files/folders this app creates (the Invoices/<company>/ copies). */
         const val DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"
-        private val SCOPES = listOf(Scope(GMAIL_SEND), Scope("email"), Scope(DRIVE_APPDATA), Scope(DRIVE_FILE))
+        /** Reading MEC job emails. */
+        const val GMAIL_READ = "https://www.googleapis.com/auth/gmail.readonly"
+        /** Writing jobs to the "DJ Jobs" calendar. */
+        const val CALENDAR = "https://www.googleapis.com/auth/calendar"
+        private val SCOPES = listOf(
+            Scope(GMAIL_SEND), Scope("email"), Scope(DRIVE_APPDATA), Scope(DRIVE_FILE), Scope(GMAIL_READ), Scope(CALENDAR),
+        )
     }
 
     private var pending: CompletableDeferred<AuthorizationResult>? = null
@@ -82,6 +88,10 @@ class GoogleAuth(private val activity: ComponentActivity) {
     var hasDriveFileScope = false
         private set
 
+    /** Whether the last token can read Gmail and write the calendar (needed for the Jobs calendar). */
+    var hasJobScopes = false
+        private set
+
     /**
      * Returns a valid access token. If Google needs to show its account/permission screen, it does so
      * when [interactive], otherwise throws [ConsentNeededException].
@@ -102,6 +112,8 @@ class GoogleAuth(private val activity: ComponentActivity) {
         if (result.grantedScopes.none { it.endsWith("gmail.send") }) throw MissingScopeException()
         hasDriveScope = result.grantedScopes.any { it.endsWith("drive.appdata") }
         hasDriveFileScope = result.grantedScopes.any { it.endsWith("drive.file") }
+        hasJobScopes = result.grantedScopes.any { it.endsWith("gmail.readonly") } &&
+            result.grantedScopes.any { it.endsWith("auth/calendar") }
         return result.accessToken ?: error("Google didn't return an access token")
     }
 }
@@ -191,6 +203,8 @@ object Mailer {
                     return "Permission to send email wasn't granted. Sign in again and allow sending email."
                 is ConsentNeededException ->
                     return "Google needs your permission again. Tap Sync now on the Me tab."
+                is JobScopeMissingException ->
+                    return "To show your MEC jobs, allow reading Gmail and managing Calendar. Pull down to try again."
                 is DriveScopeMissingException ->
                     return "Google Drive access wasn't allowed. Tap Sync now and tick the Drive box."
                 is ApiException -> return when (e.statusCode) {
