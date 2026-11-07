@@ -528,6 +528,49 @@ class JobSyncManager(
 
     private val mutex = Mutex()
 
+    /** The emails behind an event, newest first, with subject and date when this device has read them. */
+    fun emailsFor(e: CalEvent): List<JobEmail> {
+        val refs = e["emails"]?.lines()?.mapNotNull { line ->
+            val kind = runCatching { MailKind.valueOf(line.substringBefore(':')) }.getOrNull() ?: return@mapNotNull null
+            kind to line.substringAfter(':')
+        } ?: e["jobSheetUrl"]?.let { listOf(MailKind.JOBSHEET to it.substringAfterLast('/')) }.orEmpty()
+        if (refs.isEmpty()) return emptyList()
+        val facts = store.facts.associateBy { it.messageId.substringBefore('#') }
+        return refs.map { (kind, id) ->
+            val f = facts[id]
+            JobEmail(id, kind, f?.subject?.takeIf { kind != MailKind.ZOHO }?.let { JobParser.cleanSubject(it) }, f?.sentAt)
+        }
+    }
+
+    /** Reads one email from Gmail to show in the app. */
+    suspend fun loadEmail(messageId: String): Result<GmailReader.Full> = runCatching {
+        val token = auth.token(state.profile.googleAccount, interactive = true)
+        withContext(Dispatchers.IO) { GmailReader.full(token, messageId) }
+    }
+
+    /** Downloads an email attachment and opens it in a viewer app. Returns an error to show, or null. */
+    suspend fun openAttachment(ctx: Context, a: AttachmentRef): String? = runCatching {
+        val token = auth.token(state.profile.googleAccount, interactive = true)
+        val file = withContext(Dispatchers.IO) {
+            val dir = File(ctx.cacheDir, "mail/${a.messageId}").apply { mkdirs() }
+            File(dir, a.fileName.replace(Regex("""[\\/:*?"<>|]"""), "_")).also { f ->
+                if (!f.exists() || f.length() == 0L) f.writeBytes(GmailReader.attachment(token, a.messageId, a.attachmentId))
+            }
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+        // Go by the file extension first, like a file manager: senders often label .docx files
+        // "application/zip", which offers archive apps instead of document viewers.
+        val mime = attachmentMime(file.name, a.mimeType)
+        val view = android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri, mime)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            ctx.startActivity(view)
+            null
+        } catch (e: android.content.ActivityNotFoundException) {
+            "No app on this phone opens ${file.extension.uppercase()} files."
+        }
+    }.getOrElse { Mailer.friendlyError(it) }
+
     /** Returns null on success, or a friendly error. */
     suspend fun sync(interactive: Boolean): String? = mutex.withLock {
         val account = state.profile.googleAccount

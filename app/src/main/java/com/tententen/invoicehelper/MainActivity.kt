@@ -235,6 +235,7 @@ fun InvoiceScreen(
         travel = ""
         extras.clear()
         dateDay = LocalDate.now().toEpochDay()
+        scope.launch { snackbar.showSnackbar("Filled in from the job. Add parking if you paid any.") }
         onPrefillUsed()
     }
 

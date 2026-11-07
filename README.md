@@ -63,8 +63,13 @@ Tap **Connect Gmail & Calendar** once, then pull down to refresh.
   automatically once MEC confirms a gig on that date.
 - Updates never remove a date by themselves. If a gig is cancelled or drops off MEC's emails,
   it shows under **Needs your OK** and stays in the calendar until you approve the removal.
-- Tap a gig for its details, call buttons, directions, files, and **Create invoice**
-  (prefills the MEC invoice with the client and pay).
+- Tap a gig for its details, call buttons, directions and files.
+- **Autofill invoice** fills in the MEC invoice with the client and pay; add parking yourself.
+  It's greyed out until MEC's emails include the pay for that gig.
+- **Open job sheet email** shows the email in the app, with its attachments, **Reply in Gmail**
+  and **Open Gmail**. The ▾ next to it lists the gig's other emails (confirmation, e-introduction,
+  invoiced and hold notices, song lists, the monthly report).
+  Emails open in the app because Gmail's Android app doesn't let other apps open a particular email.
 
 ## Moving companies between devices
 On the **Companies** tab, **Export** saves all companies (details plus next invoice numbers) to a

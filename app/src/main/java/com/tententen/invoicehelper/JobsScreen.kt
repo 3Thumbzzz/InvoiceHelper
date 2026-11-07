@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
@@ -155,9 +161,18 @@ fun JobsScreen(
     val events = jobs.events
 
     val open = openId?.let { id -> events.firstOrNull { it.id == id } }
+    var mail by remember { mutableStateOf<JobEmail?>(null) }
+    // Kept here so coming back from an email returns to the same place on the job.
+    val detailScroll = remember(openId) { ScrollState(0) }
     BackHandler(enabled = open != null) { openId = null }
+    val m = mail
+    if (open != null && m != null) {
+        EmailScreen(m.messageId, m.label, jobs, snackbar) { mail = null }
+        return
+    }
     if (open != null) {
         JobDetail(
+            scroll = detailScroll,
             open, onBack = { openId = null }, onInvoice = onInvoice,
             onRemoveUnconfirmed = {
                 scope.launch {
@@ -166,6 +181,8 @@ fun JobsScreen(
                     snackbar.showSnackbar(err ?: "Removed MEC unconfirmed for ${open.date.format(CARD_DAY)}")
                 }
             },
+            emails = remember(open) { jobs.emailsFor(open) },
+            onOpenEmail = { mail = it },
         )
         return
     }
@@ -367,17 +384,20 @@ fun JobsScreen(
 
 @Composable
 private fun JobDetail(
+    scroll: ScrollState,
     e: CalEvent,
     onBack: () -> Unit,
     onInvoice: (InvoicePrefill) -> Unit,
     onRemoveUnconfirmed: () -> Unit,
+    emails: List<JobEmail>,
+    onOpenEmail: (JobEmail) -> Unit,
 ) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -511,25 +531,27 @@ private fun JobDetail(
 
         HorizontalDivider()
         if (e.isJob && !e.cancelled && !e.unconfirmed) {
+            val amount = invoiceAmount(e[F.PAY])
             Button(
                 onClick = {
                     val client = if (e.onHold) "On hold ${e.date.format(SHORT_DATE)}" else invoiceClient(e[F.NAME])
-                    onInvoice(InvoicePrefill(client, invoiceAmount(e[F.PAY])))
+                    onInvoice(InvoicePrefill(client, amount))
                 },
+                enabled = amount.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Create, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Create invoice for this job")
+                Text(if (amount.isNotBlank()) "Autofill invoice · $$amount" else "Autofill invoice")
             }
+            Text(
+                if (amount.isNotBlank()) "Fills in MEC, the client and the pay. Add parking yourself."
+                else "No pay found in MEC's emails for this job yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+            )
         }
-        e["jobSheetUrl"]?.let { url ->
-            OutlinedButton(onClick = { openUrl(ctx, url) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Email, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Open job sheet email")
-            }
-        }
+        emails.primary()?.let { main -> EmailButton(main, emails - main, onOpenEmail) }
         if (e.htmlLink.isNotBlank()) {
             OutlinedButton(onClick = { openUrl(ctx, e.htmlLink) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.DateRange, null)
@@ -538,6 +560,57 @@ private fun JobDetail(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** "Open job sheet email" with a ▾ beside it listing the job's other emails. */
+@Composable
+private fun EmailButton(main: JobEmail, others: List<JobEmail>, onOpen: (JobEmail) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { onOpen(main) }, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Default.Email, null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (main.kind == MailKind.RELATED || main.kind == MailKind.OTHER) "Open email" else "Open ${main.label.lowercase()} email",
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (others.isNotEmpty()) {
+            Box {
+                OutlinedIconButton(onClick = { menu = true }) {
+                    Icon(Icons.Default.ArrowDropDown, "Other emails for this job")
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    Text(
+                        "Other emails for this job",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    others.forEach { m ->
+                        DropdownMenuItem(
+                            leadingIcon = { Icon(Icons.Default.Email, null) },
+                            text = {
+                                Column {
+                                    Text(m.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    val sub = listOf(m.sent, m.subject?.takeIf { it != m.label }.orEmpty())
+                                        .filter { it.isNotBlank() }.joinToString(" · ")
+                                    if (sub.isNotBlank()) {
+                                        Text(
+                                            sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = { menu = false; onOpen(m) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

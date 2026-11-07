@@ -155,7 +155,7 @@ object JobBook {
                     spotify = emptyList(),
                     links = emptyList(),
                     attachments = emptyList(),
-                    sources = hs.filter { !it.messageId.contains('#') }.sortedByDescending { it.sentAt }.map { it.kind to it.messageId },
+                    sources = emailSources(hs.sortedByDescending { it.sentAt }),
                     notInReport = false,
                 )
             }
@@ -166,6 +166,11 @@ object JobBook {
         if (r.onHold) MailFact("$reportId#$i", sentAt, MailKind.HOLD, "Monthly bookings report", r.date, mapOf(F.NAME to "ON HOLD"))
         else zohoFact(reportId, sentAt, i, r)
     }
+
+    /** The Gmail messages behind some facts, newest first; report rows ("id#3") become the report email. */
+    fun emailSources(newestFirst: List<MailFact>): List<Pair<MailKind, String>> = newestFirst
+        .map { (if (isReportFact(it)) MailKind.ZOHO else it.kind) to it.messageId.substringBefore('#') }
+        .distinctBy { it.second }
 
     /** Facts that came from a monthly report (replaced when a newer report arrives). */
     fun isReportFact(f: MailFact) = f.kind == MailKind.ZOHO || (f.kind == MailKind.HOLD && f.messageId.contains('#'))
@@ -201,7 +206,7 @@ object JobBook {
             spotify = newest.flatMap { it.spotify }.distinctBy { it.substringBefore('?').lowercase() },
             links = newest.flatMap { it.links }.distinctBy { it.substringBefore('?').lowercase() },
             attachments = newest.flatMap { it.attachments }.distinctBy { it.fileName.lowercase() to it.size },
-            sources = newest.filter { it.kind != MailKind.ZOHO }.map { it.kind to it.messageId },
+            sources = emailSources(newest),
             notInReport = notInReport,
         )
     }
@@ -391,6 +396,7 @@ object JobEvent {
         mapsUrl(location(job))?.let { m["maps"] = it }
         location(job).takeIf { it.isNotBlank() }?.let { m["location"] = it }
         job.sources.firstOrNull { it.first == MailKind.JOBSHEET }?.let { m["jobSheetUrl"] = gmailUrl(account, it.second) }
+        if (job.sources.isNotEmpty()) m["emails"] = job.sources.take(35).joinToString("\n") { "${it.first.name}:${it.second}" }
         return m
     }
 

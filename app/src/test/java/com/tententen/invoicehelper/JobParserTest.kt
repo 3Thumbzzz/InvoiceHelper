@@ -504,5 +504,41 @@ class JobParserTest {
         assertEquals("Robin Demo", invoiceClient("Robin Demo"))
         assertEquals("475.00", invoiceAmount("$ 475.00"))
         assertEquals("1250", invoiceAmount("$1,250"))
+        // No pay collected -> the autofill button is disabled.
+        assertEquals("", invoiceAmount(null))
+        assertEquals("", invoiceAmount("TBC"))
+    }
+
+    @Test
+    fun jobKeepsEveryRelatedEmailNewestFirst() {
+        val facts = listOf(
+            fact("inv", 1, MailKind.INVOICED, d, F.NAME to "Joe Sample | Sample High School"),
+            fact("conf", 2, MailKind.CONFIRMED, d, F.NAME to "Joe Sample", F.PAY to "$ 390.00"),
+            JobBook.zohoFact("rep", 3, 0, ZohoRow(d, "Joe Sample", "School", "", "", "7pm", "11pm", "")),
+            fact("sheet", 4, MailKind.JOBSHEET, d, F.NAME to "Joe Sample | School Formal"),
+            fact("songs", 5, MailKind.RELATED, d, F.NAME to "Joe Sample"),
+        )
+        val joe = JobBook.build(facts).single()
+        assertEquals(
+            listOf(MailKind.RELATED to "songs", MailKind.JOBSHEET to "sheet", MailKind.ZOHO to "rep", MailKind.CONFIRMED to "conf", MailKind.INVOICED to "inv"),
+            joe.sources,
+        )
+        assertEquals("RELATED:songs\nJOBSHEET:sheet\nZOHO:rep\nCONFIRMED:conf\nINVOICED:inv", JobEvent.props(joe, "me@example.com")["emails"])
+        val emails = joe.sources.map { (k, id) -> JobEmail(id, k, null, null) }
+        assertEquals("sheet", emails.primary()?.messageId)
+        assertEquals("Monthly bookings report", emails.single { it.kind == MailKind.ZOHO }.label)
+        assertEquals("conf", emails.filter { it.kind != MailKind.JOBSHEET }.primary()?.messageId)
+    }
+
+    @Test
+    fun attachmentsOpenByTheirExtension() {
+        // MEC's mail labels Word forms "application/zip"; open them as Word documents.
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            attachmentMime("DJ Requests - Event Form.docx", "application/zip"),
+        )
+        assertEquals("application/pdf", attachmentMime("Run Sheet.PDF", "application/octet-stream"))
+        assertEquals("image/png", attachmentMime("no-extension", "image/png"))
+        assertEquals("*/*", attachmentMime("mystery", "application/octet-stream"))
     }
 }
