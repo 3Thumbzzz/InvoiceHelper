@@ -96,6 +96,7 @@ object InvoicePdf {
             Triple(co.phoneLabel.ifBlank { "Phone" }, co.phone, reg),
             Triple("Email", co.email, link),
             Triple("Web", co.web, link),
+            Triple("ABN", co.abn, reg),
         ).filter { it.second.isNotBlank() }.forEachIndexed { i, (label, value, p) ->
             c.drawText(label, lLabel, y + i * lh, reg)
             drawFitted(c, value, lVal, y + i * lh, 265f, p)

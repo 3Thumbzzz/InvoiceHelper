@@ -736,6 +736,7 @@ fun CompanyEditor(
         Field("Website", c.web, type = KeyboardType.Uri, caps = KeyboardCapitalization.None) {
             c = c.copy(web = it.trim())
         }
+        Field("ABN (optional)", c.abn, type = KeyboardType.Number) { c = c.copy(abn = it) }
         Field("Next invoice number", nextNo, type = KeyboardType.Number) { nextNo = it.filter(Char::isDigit) }
 
         Row(verticalAlignment = Alignment.CenterVertically) {

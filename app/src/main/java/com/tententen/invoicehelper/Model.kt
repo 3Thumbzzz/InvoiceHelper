@@ -25,6 +25,8 @@ data class Company(
     /** Where invoices get emailed. Comma-separate multiple addresses. */
     val email: String = "",
     val web: String = "",
+    /** Optional; printed on the invoice under Web when set. */
+    val abn: String = "",
     val nextInvoiceNo: Int = 1,
     /** When this company was last changed on any device (ms since epoch); 0 = untouched default. */
     val updatedAt: Long = 0L,
@@ -33,7 +35,7 @@ data class Company(
         .put("id", id).put("name", name).put("code", code)
         .put("address1", address1).put("address2", address2).put("address3", address3)
         .put("phoneLabel", phoneLabel).put("phone", phone)
-        .put("email", email).put("web", web).put("nextInvoiceNo", nextInvoiceNo)
+        .put("email", email).put("web", web).put("abn", abn).put("nextInvoiceNo", nextInvoiceNo)
         .put("updatedAt", updatedAt)
 
     companion object {
@@ -48,6 +50,7 @@ data class Company(
             phone = o.optString("phone"),
             email = o.optString("email"),
             web = o.optString("web"),
+            abn = o.optString("abn"),
             nextInvoiceNo = o.optInt("nextInvoiceNo", 1),
             updatedAt = o.optLong("updatedAt", 0L),
         )

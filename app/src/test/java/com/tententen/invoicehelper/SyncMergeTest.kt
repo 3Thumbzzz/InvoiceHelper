@@ -86,4 +86,12 @@ class SyncMergeTest {
         assertEquals("", back.profile.googleAccount)
         assertEquals(d.history, back.history)
     }
+
+    @Test
+    fun companyAbnRoundTripsAndDefaultsBlank() {
+        val withAbn = mec.copy(abn = "12 345 678 901")
+        assertEquals("12 345 678 901", Company.fromJson(withAbn.toJson()).abn)
+        val old = mec.toJson().apply { remove("abn") }   // data saved before ABN existed
+        assertEquals("", Company.fromJson(old).abn)
+    }
 }
