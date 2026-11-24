@@ -736,7 +736,7 @@ fun CompanyEditor(
         Field("Website", c.web, type = KeyboardType.Uri, caps = KeyboardCapitalization.None) {
             c = c.copy(web = it.trim())
         }
-        Field("ABN (optional)", c.abn, type = KeyboardType.Number) { c = c.copy(abn = it) }
+        Field("ABN (optional)", c.abn, type = KeyboardType.Number, error = abnError(c.abn)) { c = c.copy(abn = it) }
         Field("Next invoice number", nextNo, type = KeyboardType.Number) { nextNo = it.filter(Char::isDigit) }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -780,12 +780,15 @@ fun Field(
     type: KeyboardType = KeyboardType.Text,
     caps: KeyboardCapitalization = KeyboardCapitalization.Words,
     singleLine: Boolean = true,
+    error: String? = null,
     onChange: (String) -> Unit,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
         singleLine = singleLine,
         minLines = if (singleLine) 1 else 3,
         keyboardOptions = KeyboardOptions(capitalization = caps, keyboardType = type),
@@ -868,7 +871,7 @@ fun ProfileScreen(state: AppState, auth: GoogleAuth, sync: SyncManager, snackbar
         Field("Email shown on invoice", p.email, type = KeyboardType.Email, caps = KeyboardCapitalization.None) {
             set(p.copy(email = it.trim()))
         }
-        Field("ABN", p.abn, type = KeyboardType.Number) { set(p.copy(abn = it)) }
+        Field("ABN", p.abn, type = KeyboardType.Number, error = abnError(p.abn)) { set(p.copy(abn = it)) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Field("BSB", p.bsb, Modifier.weight(1f), type = KeyboardType.Number) { set(p.copy(bsb = it)) }
             Field("Account", p.acc, Modifier.weight(1f), type = KeyboardType.Number) { set(p.copy(acc = it)) }

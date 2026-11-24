@@ -11,6 +11,19 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 
+/**
+ * Returns an error message for a bad ABN, or null if it's blank or valid. Spaces are ignored.
+ * Uses the ATO checksum: subtract 1 from the first digit, weight the digits, sum must divide by 89.
+ */
+fun abnError(raw: String): String? {
+    val s = raw.filterNot(Char::isWhitespace)
+    if (s.isEmpty()) return null
+    if (s.length != 11 || !s.all { it in '0'..'9' }) return "ABN must be 11 digits"
+    val w = intArrayOf(10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19)
+    val d = s.map { it - '0' }.toMutableList().also { it[0] -= 1 }
+    return if (d.indices.sumOf { d[it] * w[it] } % 89 == 0) null else "Not a valid ABN (check for typos)"
+}
+
 /** A company you DJ for and send invoices to. */
 data class Company(
     val id: String = UUID.randomUUID().toString(),
