@@ -127,7 +127,21 @@ object Http {
         body: ByteArray?,
         contentType: String?,
         service: String,
-    ): String {
+    ): String = call(url, token, method, body, contentType, service) { it.bufferedReader().readText() }
+
+    /** GET [url] and return the raw response (file downloads). */
+    fun bytes(url: String, token: String, service: String): ByteArray =
+        call(url, token, "GET", null, null, service) { it.readBytes() }
+
+    private fun <T> call(
+        url: String,
+        token: String,
+        method: String,
+        body: ByteArray?,
+        contentType: String?,
+        service: String,
+        read: (java.io.InputStream) -> T,
+    ): T {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 20_000
@@ -146,7 +160,7 @@ object Http {
                     .getOrDefault(err.take(300))
                 throw ApiHttpException(service, code, detail)
             }
-            return conn.inputStream.bufferedReader().readText()
+            return conn.inputStream.use(read)
         } finally {
             conn.disconnect()
         }

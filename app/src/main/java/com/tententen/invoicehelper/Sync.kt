@@ -182,6 +182,10 @@ object DriveFiles {
         return DriveFileInfo(name, o.getString("id"), o.getString("webViewLink"), o.optString("mimeType", mime))
     }
 
+    /** Downloads the contents of a Drive file this app saved. */
+    fun download(token: String, fileId: String): ByteArray =
+        Http.bytes("https://www.googleapis.com/drive/v3/files/${URLEncoder.encode(fileId, "UTF-8")}?alt=media", token, "Google Drive")
+
     /**
      * Re-uploads an earlier copy saved with the wrong type (MEC labels .docx files "application/zip", which made
      * Drive open them as archives). Keeps the file id and link. Drive v2 takes a PUT; HttpURLConnection has no PATCH.

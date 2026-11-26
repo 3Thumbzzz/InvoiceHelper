@@ -47,6 +47,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -183,6 +184,7 @@ fun JobsScreen(
             },
             emails = remember(open) { jobs.emailsFor(open) },
             onOpenEmail = { mail = it },
+            onOpenFile = { f -> jobs.openDriveFile(ctx, f)?.let { snackbar.showSnackbar(it) } },
         )
         return
     }
@@ -391,8 +393,11 @@ private fun JobDetail(
     onRemoveUnconfirmed: () -> Unit,
     emails: List<JobEmail>,
     onOpenEmail: (JobEmail) -> Unit,
+    onOpenFile: suspend (EventFile) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var openingFile by remember { mutableStateOf<EventFile?>(null) }
     val colors = MaterialTheme.colorScheme
     Column(
         Modifier
@@ -510,7 +515,14 @@ private fun JobDetail(
         val links = e["links"]?.lines()?.filter { it.isNotBlank() }.orEmpty()
         if (e.files.isNotEmpty() || links.isNotEmpty()) {
             Section("Job sheet files")
-            e.files.forEach { (name, url) -> LinkButton(Icons.AutoMirrored.Filled.List, name) { openUrl(ctx, url) } }
+            e.files.forEach { f ->
+                LinkButton(Icons.AutoMirrored.Filled.List, f.name, busy = openingFile == f) {
+                    if (openingFile == null) scope.launch {
+                        openingFile = f
+                        try { onOpenFile(f) } finally { openingFile = null }
+                    }
+                }
+            }
             links.forEachIndexed { i, url -> LinkButton(Icons.AutoMirrored.Filled.List, "Shared file ${i + 1}") { openUrl(ctx, url) } }
         }
 
@@ -651,9 +663,9 @@ private fun Banner(text: String, color: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun LinkButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun LinkButton(icon: ImageVector, label: String, busy: Boolean = false, onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Icon(icon, null)
+        if (busy) CircularProgressIndicator(Modifier.size(24.dp).padding(2.dp), strokeWidth = 2.dp) else Icon(icon, null)
         Spacer(Modifier.width(8.dp))
         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }

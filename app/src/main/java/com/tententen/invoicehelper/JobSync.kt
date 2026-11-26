@@ -276,6 +276,9 @@ object GmailReader {
     private fun decode(s: String): ByteArray = Base64.decode(s, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
 }
 
+/** A file attached to an event: the Drive copy's link, id and type (id/type blank on old events). */
+data class EventFile(val name: String, val url: String, val fileId: String, val mimeType: String)
+
 /** An event as shown in the app. [props] holds the job details written by [JobEvent]. */
 data class CalEvent(
     val id: String,
@@ -286,7 +289,7 @@ data class CalEvent(
     val location: String,
     val description: String,
     val htmlLink: String,
-    val files: List<Pair<String, String>>,
+    val files: List<EventFile>,
     val props: Map<String, String>,
     val status: String = "confirmed",
     /** Google Calendar event colour ("1"-"11"), or null for the calendar's colour. */
@@ -320,7 +323,11 @@ data class CalEvent(
                 location = o.optString("location"),
                 description = o.optString("description"),
                 htmlLink = o.optString("htmlLink"),
-                files = (0 until att.length()).map { att.getJSONObject(it).let { a -> a.optString("title") to a.optString("fileUrl") } },
+                files = (0 until att.length()).map {
+                    att.getJSONObject(it).let { a ->
+                        EventFile(a.optString("title"), a.optString("fileUrl"), a.optString("fileId"), a.optString("mimeType"))
+                    }
+                },
                 props = p.keys().asSequence().associateWith { p.getString(it) },
                 status = o.optString("status", "confirmed"),
                 colorId = o.optString("colorId").takeIf { it.isNotBlank() },
@@ -570,6 +577,34 @@ class JobSyncManager(
             "No app on this phone opens ${file.extension.uppercase()} files."
         }
     }.getOrElse { Mailer.friendlyError(it) }
+
+    /**
+     * Downloads a job sheet file from Drive and shows the "Open with" list, so it can open in Word, Docs or a
+     * PDF viewer (Drive's own preview has no zoom or printing for Word files). Falls back to the Drive link.
+     * Returns an error to show, or null.
+     */
+    suspend fun openDriveFile(ctx: Context, f: EventFile): String? {
+        val opened = f.fileId.isNotBlank() && runCatching {
+            val dir = File(ctx.cacheDir, "drive/" + f.fileId.replace(Regex("""[^\w-]"""), "_"))
+            val file = File(dir, f.name.ifBlank { "file" }.replace(Regex("""[\\/:*?"<>|]"""), "_"))
+            if (!file.exists() || file.length() == 0L) {
+                val token = auth.token(state.profile.googleAccount, interactive = true)
+                withContext(Dispatchers.IO) {
+                    dir.mkdirs()
+                    file.writeBytes(DriveFiles.download(token, f.fileId))
+                }
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+            val view = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                .setDataAndType(uri, attachmentMime(file.name, f.mimeType))
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val chooser = android.content.Intent.createChooser(view, "Open with")
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(chooser)
+        }.isSuccess
+        if (opened) return null
+        return if (f.url.isNotBlank() && openUrl(ctx, f.url)) null else "Couldn't open ${f.name}."
+    }
 
     /** Returns null on success, or a friendly error. */
     suspend fun sync(interactive: Boolean): String? = mutex.withLock {
