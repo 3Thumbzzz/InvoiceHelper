@@ -742,16 +742,18 @@ class JobSyncManager(
         val out = mutableListOf<DriveFileInfo>()
         for (a in job.attachments) {
             val key = "${a.messageId}/${a.fileName}"
+            // By file extension: MEC labels .docx files "application/zip", which Drive then opens as an archive.
+            val mime = attachmentMime(a.fileName, a.mimeType).takeIf { it != "*/*" } ?: UNKNOWN_TYPE
             val existing = known[key]
-            if (existing != null) {
+            if (existing != null && (existing.mimeType == mime || mime == UNKNOWN_TYPE)) {
                 out += existing
                 continue
             }
             progress = "Saving ${a.fileName} to Drive…"
             val info = runCatching {
                 val bytes = cachedAttachment(token, a)
-                DriveFiles.saveJobFile(token, folder, a.fileName, a.mimeType.ifBlank { "application/octet-stream" }, bytes)
-            }.getOrNull() ?: continue
+                DriveFiles.saveJobFile(token, folder, a.fileName, mime, bytes)
+            }.getOrNull() ?: existing ?: continue
             known[key] = info
             store.files = known
             out += info

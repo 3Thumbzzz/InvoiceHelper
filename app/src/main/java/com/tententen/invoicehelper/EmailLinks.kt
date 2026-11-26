@@ -86,12 +86,15 @@ private val OFFICE_TYPES = mapOf(
     "pdf" to "application/pdf",
 )
 
+/** Type for files we can't name a type for. */
+const val UNKNOWN_TYPE = "application/octet-stream"
+
 /** The type to open an attachment as: from its file extension, else what the email said, else anything. */
 fun attachmentMime(fileName: String, emailType: String): String {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return OFFICE_TYPES[ext]
         ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-        ?: emailType.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+        ?: emailType.takeIf { it.isNotBlank() && it != UNKNOWN_TYPE }
         ?: "*/*"
 }
 

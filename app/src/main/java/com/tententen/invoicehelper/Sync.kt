@@ -173,12 +173,38 @@ object DriveFiles {
                 token, "GET", null, null, "Google Drive",
             )
         ).optJSONArray("files")
-        val o = if (found != null && found.length() > 0) {
+        var o = if (found != null && found.length() > 0) {
             found.getJSONObject(0)
         } else {
             JSONObject(upload(token, name, mime, bytes, sub, "id,webViewLink,mimeType"))
         }
+        if (mime != UNKNOWN_TYPE && o.optString("mimeType") != mime) o = retype(token, o.getString("id"), mime, bytes)
         return DriveFileInfo(name, o.getString("id"), o.getString("webViewLink"), o.optString("mimeType", mime))
+    }
+
+    /**
+     * Re-uploads an earlier copy saved with the wrong type (MEC labels .docx files "application/zip", which made
+     * Drive open them as archives). Keeps the file id and link. Drive v2 takes a PUT; HttpURLConnection has no PATCH.
+     */
+    private fun retype(token: String, fileId: String, mime: String, bytes: ByteArray): JSONObject {
+        val boundary = "invoicehelper-${System.nanoTime()}"
+        val meta = JSONObject().put("mimeType", mime)
+        val body = java.io.ByteArrayOutputStream().apply {
+            write("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n".toByteArray())
+            write("--$boundary\r\nContent-Type: $mime\r\n\r\n".toByteArray())
+            write(bytes)
+            write("\r\n--$boundary--\r\n".toByteArray())
+        }.toByteArray()
+        Http.request(
+            "https://www.googleapis.com/upload/drive/v2/files/$fileId?uploadType=multipart",
+            token, "PUT", body, "multipart/related; boundary=$boundary", "Google Drive",
+        )
+        return JSONObject(
+            Http.request(
+                "https://www.googleapis.com/drive/v3/files/$fileId?fields=id,webViewLink,mimeType",
+                token, "GET", null, null, "Google Drive",
+            )
+        )
     }
 
     private fun cleanName(s: String) = s.replace('/', '-').replace('\\', '-').trim()
